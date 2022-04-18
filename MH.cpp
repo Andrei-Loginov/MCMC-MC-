@@ -161,7 +161,7 @@ IntegerVector MC3ScoreSample(int N, const IntegerVector& targetStr, int alphabet
       for (int j = 0; j < nchains / 2; ++j){
         int delta = getElement(scores, perm[j], i) - getElement(scores, perm[nchains - j - 1], i);
         ///A = (gamma_i - gamma_j) * (s_j - s_i)
-        double A = exp((gammas[perm[nchains - j - 1]] - gammas[perm[j]]) * delta);
+        double A = exp(-(gammas[perm[nchains - j - 1]] - gammas[perm[j]]) * delta);
         if (A > unif01[unifCounter++]) {
           std::swap(scores[perm[j]], scores[perm[nchains - j - 1]]);
           //std::swap(currStr[perm[j]], currStr[perm[nchains - j - 1]]);
