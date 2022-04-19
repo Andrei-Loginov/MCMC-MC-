@@ -113,6 +113,11 @@ void assignRow(IntegerMatrix& matr, int row, const IntegerVector& v){
 }
 
 //[[Rcpp::export]]
+void swapElements(IntegerMatrix& matr, int row1, int col1, int row2, int col2){
+  std::swap(matr[matr.nrow() * col1 + row1], matr[matr.nrow() * col2+ row2]);
+}
+
+//[[Rcpp::export]]
 IntegerVector MC3ScoreSample(int N, const IntegerVector& targetStr, int alphabetLen, 
                              const NumericVector& gammas, int step)
 {
@@ -160,10 +165,10 @@ IntegerVector MC3ScoreSample(int N, const IntegerVector& targetStr, int alphabet
       IntegerVector perm = sample(range(0, nchains - 1), nchains, false);
       for (int j = 0; j < nchains / 2; ++j){
         int delta = getElement(scores, perm[j], i) - getElement(scores, perm[nchains - j - 1], i);
-        ///A = (gamma_i - gamma_j) * (s_j - s_i)
-        double A = exp(-(gammas[perm[nchains - j - 1]] - gammas[perm[j]]) * delta);
+        double A = exp((gammas[perm[j]] - gammas[perm[nchains - j - 1]]) * delta);
         if (A > unif01[unifCounter++]) {
-          std::swap(scores[perm[j]], scores[perm[nchains - j - 1]]);
+          //std::swap(scores[perm[j]], scores[perm[nchains - j - 1]]);
+          swapElements(scores, perm[j], i, perm[nchains - j - 1], i);
           //std::swap(currStr[perm[j]], currStr[perm[nchains - j - 1]]);
           swapRows(currStr, perm[j], perm[nchains - j - 1]);
         }
