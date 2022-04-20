@@ -1,0 +1,275 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(dplyr)
+library(Rcpp)
+library(ggplot2)
+```
+
+```{r}
+first.gamma = c(0.5, 1, 1.5, 2, 2.5)
+last.gamma = c(0.5, 1, 1.5, 2, 2.5)
+sbs = c(10, 50, 100)
+nchains = c(1, 5, 10)
+N = 10^5
+m = 50
+
+total.iter = length(first.gamma) * length(last.gamma) * length(sbs) * length(nchains) * m
+curr.iter = 0
+pb <- txtProgressBar(min = 0,      # Minimum value of the progress bar
+                     max = total.iter, # Maximum value of the progress bar
+                     style = 3,    # Progress bar style (also available style = 1 and style = 2)
+                     width = 50,   # Progress bar width. Defaults to getOption("width")
+                     char = "=")   # Character used to create the bar
+
+MSE.column = numeric(0)
+gamma1.column = numeric(0)
+gamma2.column = numeric(0)
+step.column = numeric(0)
+nchains.column = numeric(0)
+est.column = numeric(0)
+vars.column = numeric(0)
+mse.column = numeric(0)
+
+for (gamma1 in first.gamma) {
+  for (gamma2 in last.gamma) {
+    for (batch in sbs) {
+      for (chain in nchains) {
+        set.seed(24)
+        est = numeric(m)
+        vars = numeric(m)
+        for (i in 1:m) {
+          curr.iter = curr.iter + 1
+          setTxtProgressBar(pb, curr.iter)
+          res <- MC3.UC.Rcpp(N, rep(0, 20), 15, 4, gamma1, gamma2, chain, batch)
+          est[i] = res$p
+          vars[i] = res$var
+        }
+        gamma1.column = c(gamma1.column, gamma1)
+        gamma2.column = c(gamma2.column, gamma2)
+        step.column = c(step.column, batch)
+        nchains.column = c(nchains.column, chain)
+        est.column = c(est.column, mean(est))
+        vars.column = c(vars.column, mean(vars))
+        mse.column = c(mse.column, mean((est - hamming.score.prob(20, 15, 4))^2))
+      }
+    }
+  }
+}
+
+parameter.search.bound <- data.frame(gamma1 = gamma1.column, 
+                                 gamma2 = gamma2.column,
+                                 dgamma = gamma2.column - gamma1.column,
+                                 sbs = step.column,
+                                 nchains = nchains.column,
+                                 est = est.column,
+                                 var = vars.column,
+                                 mse = mse.column
+                                 )
+write.csv(parameter.search.bound, './Modeling/parameter_search_boundary_gamma.csv')
+```
+
+```{r}
+parameter.search.bound <- mutate(parameter.search.bound, bias = abs(est - hamming.score.prob(20, 15, 4)))
+```
+
+
+```{r}
+head((parameter.search.bound[order(parameter.search.bound$mse), ]))
+```
+
+```{r}
+head(parameter.search.bound[order(parameter.search.bound$bias),])
+```
+
+
+## Граничный способ задания $\Gamma$
+### Зависимость дисперсии от разницы между $\Delta \gamma = \gamma_{r - 1} - \gamma_0$, где $r$ --- число цепей.
+
+```{r}
+parameter.search.bound %>%
+  filter(nchains > 1) %>%
+  ggplot(aes(x = dgamma, y = log(mse))) + 
+    geom_point(aes(color = factor(sbs))) +
+    facet_wrap(~nchains) + 
+    ggtitle('Зависимость MSE от swap batch size при 5 и 10 цепях')
+```
+Можем заметить, что при большем числе цепей получается меньшая среднеквадратичная ошибка. 
+Далее будем рассматривать только случаи, когда $\Delta \gamma \leq 0$.
+
+
+```{r}
+parameter.search.bound %>%
+  filter(nchains > 1 & dgamma <= 0) %>%
+  ggplot(aes(x = dgamma, y = log(mse))) + 
+    geom_point(aes(color = factor(sbs))) +
+    facet_wrap(~nchains)
+```
+
+## Мульипликативный способ задания $\Gamma$
+Набор $\Gamma$ определяется $\gamma_0$ и множителем $\omega$. 
+
+```{r}
+first.gamma = c(0.5, 1, 1.5, 2, 2.5)
+omega = c(0.75, 1.5)
+sbs = c(1, 10, 50, 100)
+nchains = c(1, 2,  5, 10)
+N = 10^5
+m = 50
+
+total.iter = length(first.gamma) * length(omega) * length(sbs) * length(nchains) * m
+curr.iter = 0
+pb <- txtProgressBar(min = 0,      # Minimum value of the progress bar
+                     max = total.iter, # Maximum value of the progress bar
+                     style = 3,    # Progress bar style (also available style = 1 and style = 2)
+                     width = 50,   # Progress bar width. Defaults to getOption("width")
+                     char = "=")   # Character used to create the bar
+
+MSE.column = numeric(0)
+gamma1.column = numeric(0)
+omega.column = numeric(0)
+step.column = numeric(0)
+nchains.column = numeric(0)
+est.column = numeric(0)
+vars.column = numeric(0)
+mse.column = numeric(0)
+
+for (gamma1 in first.gamma) {
+  for (omega in omega) {
+    for (batch in sbs) {
+      for (chain in nchains) {
+        set.seed(24)
+        est = numeric(m)
+        vars = numeric(m)
+        for (i in 1:m) {
+          curr.iter = curr.iter + 1
+          setTxtProgressBar(pb, curr.iter)
+          res <- MC3.UC.mult.Rcpp(N, rep(0, 20), 15, 4, gamma1, omega, chain, batch)
+          est[i] = res$p
+          vars[i] = res$var
+        }
+        gamma1.column = c(gamma1.column, gamma1)
+        omega.column = c(omega.column, omega)
+        step.column = c(step.column, batch)
+        nchains.column = c(nchains.column, chain)
+        est.column = c(est.column, mean(est))
+        vars.column = c(vars.column, mean(vars))
+        mse.column = c(mse.column, mean((est - hamming.score.prob(20, 15, 4))^2))
+      }
+    }
+  }
+}
+
+parameter.search.mult <- data.frame(gamma1 = gamma1.column, 
+                                 omega = omega.column,
+                                 sbs = step.column,
+                                 nchains = nchains.column,
+                                 est = est.column,
+                                 var = vars.column,
+                                 mse = mse.column
+                                 )
+write.csv(parameter.search.mult, './Modeling/parameter_search_mult_gamma.csv')
+```
+
+```{r}
+parameter.search.mult = mutate(parameter.search.mult, bias = abs(est - hamming.score.prob(20, 15, 4)))
+```
+
+
+```{r}
+head(parameter.search.mult[order(parameter.search.mult$mse),])
+```
+
+```{r}
+head(parameter.search.mult[order(parameter.search.mult$bias),])
+```
+
+Заметим, что наименьшая среднеквадратичная ошибка и смещение получаются больше, чем при граничном способе задания $\Gamma$. Поэтому далее будем рассматривать только граничный способ. 
+
+##Определение оптимальных значений swap batch size и числа цепей. 
+###(В обозначениях НИР --- $T$ и $r$)
+
+```{r}
+gamma = 1
+sbs = c(1, 10, 50, 100)
+nchains = c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
+N = 10^5
+m = 100
+
+total.iter = length(sbs) * length(nchains) * m
+curr.iter = 0
+pb <- txtProgressBar(min = 0,      # Minimum value of the progress bar
+                     max = total.iter, # Maximum value of the progress bar
+                     style = 3,    # Progress bar style (also available style = 1 and style = 2)
+                     width = 50,   # Progress bar width. Defaults to getOption("width")
+                     char = "=")   # Character used to create the bar
+
+MSE.column = numeric(0)
+gamma1.column = numeric(0)
+omega.column = numeric(0)
+step.column = numeric(0)
+nchains.column = numeric(0)
+est.column = numeric(0)
+vars.column = numeric(0)
+mse.column = numeric(0)
+
+for (gamma1 in gamma) {
+    for (batch in sbs) {
+      for (chain in nchains) {
+        set.seed(24)
+        est = numeric(m)
+        vars = numeric(m)
+        for (i in 1:m) {
+          curr.iter = curr.iter + 1
+          setTxtProgressBar(pb, curr.iter)
+          res <- MC3.UC.Rcpp(N, rep(0, 20), 15, 4, gamma1, gamma1, chain, batch )
+          est[i] = res$p
+          vars[i] = res$var
+        }
+        gamma1.column = c(gamma1.column, gamma1)
+        omega.column = c(omega.column, omega)
+        step.column = c(step.column, batch)
+        nchains.column = c(nchains.column, chain)
+        est.column = c(est.column, mean(est))
+        vars.column = c(vars.column, mean(vars))
+        mse.column = c(mse.column, mean((est - hamming.score.prob(20, 15, 4))^2))
+      }
+    }
+}
+
+parameter.search.bound.sbs.r <- data.frame(gamma = gamma1.column, 
+                                 sbs = step.column,
+                                 nchains = nchains.column,
+                                 est = est.column,
+                                 var = vars.column,
+                                 mse = mse.column
+                                 )
+write.csv(parameter.search.bound.sbs.r, './Modeling/parameter_search_bound_sbs_r.csv')
+```
+
+```{r}
+parameter.search.bound.sbs.r <- mutate(parameter.search.bound.sbs.r, bias = abs(est - hamming.score.prob(20, 15, 4)))
+```
+
+
+```{r}
+head(parameter.search.bound.sbs.r[order(parameter.search.bound.sbs.r$mse),])
+```
+
+```{r}
+head(parameter.search.bound.sbs.r[order(parameter.search.bound.sbs.r$bias),])
+```
+
+
+```{r}
+parameter.search.bound.sbs.r %>%
+  ggplot(aes(x = nchains, y = log(mse))) + 
+  geom_point() + 
+  facet_wrap(~sbs) + 
+  ggtitle('Зависимость MSE от числа цепей при T = 1, 10, 50, 100')
+```
+
+Наименьшее значение среднеквадратичной ошибки достигается при $T = 1$, поэтому, полагаю, что в дальнейшем лучше рассматривать только $T = 1$. 
