@@ -1,0 +1,185 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(Rcpp)
+
+sourceCpp('MH.cpp')
+```
+
+
+```{r}
+MH.score.dbg <- function(N, target.str, alphabet.len, gamma,
+                     start.str = sample(0:(alphabet.len - 1), str.len, replace = T)){
+  str.len = length(target.str)
+  scores = numeric(N)
+  curr.str = start.str
+  pos.change = sample(1:str.len, N, replace = T)
+  shift = sample(0:(alphabet.len - 1), N, replace = T)
+  unif01 <- runif(N)
+  scores[1] = sum(start.str == target.str)
+  for (i in 2:N){
+    proposed.str = curr.str
+    proposed.str[pos.change[[i]]] = (proposed.str[pos.change[[i]]] + shift[[i]]) %% alphabet.len
+    proposed.score = sum(proposed.str == target.str)
+    delta = proposed.score - scores[i - 1]
+    A = exp(gamma * delta)
+    if (A < unif01[i]) {
+      scores[i] = scores[i - 1]
+    }
+    else {
+      scores[i] = proposed.score
+      curr.str = proposed.str
+    }
+  }
+  return(list(R = scores, 
+              Rcpp = MHScoreSampling(N, 
+                                     as.integer(target.str),
+                                     as.integer(alphabet.len),
+                                     gamma,
+                                     as.integer(start.str),
+                                     as.integer(pos.change),
+                                     as.integer(shift),
+                                     unif01)))
+}
+```
+
+```{r}
+{
+  set.seed(42)
+  target.str = rep(0, 20)
+  N = 20000
+  alphabet.len = 4
+  gamma = 1
+  startStr = sample(0:(alphabet.len - 1), 20, TRUE)
+  score.sample <- MH.score.dbg(N, target.str, alphabet.len, gamma, startStr)
+  hist(score.sample$R)
+  hist(score.sample$Rcpp)
+  #print(c(length(score.sample$Rcpp), length(score.sample$R)))
+}
+```
+
+
+```{r Sampling sequences  with Metropolis-Hsatings algorithm}
+MH.str <- function(n, target.str, alphabet.len, gamma, start.str){
+  str.len = length(target.str)
+  x = matrix(rep(0, n *str.len), ncol = str.len)
+  x[1,] = start.str
+  pos.change = sample(1:str.len, n, replace = T)
+  shift = sample(0:(alphabet.len - 1), n, replace = T)
+  unif01 <- runif(n)
+  for (i in 2:n){
+    curr_x = x[i - 1,]
+    proposed_x = curr_x
+    proposed_x[pos.change[[i]]] = (proposed_x[pos.change[[i]]] + shift[[i]]) %% alphabet.len
+    delta = sum(target.str == proposed_x) - sum(target.str == curr_x)
+    A = exp(gamma * delta)
+    x[i,] = if(A<unif01[i]) curr_x else proposed_x
+  }
+  return(list(R = x, 
+              Rcpp = MHStrSampling(n, target.str, alphabet.len, gamma, start.str, pos.change, shift, unif01),
+              pos.change = pos.change,
+              shift = shift,
+              unif01 = unif01))
+}
+```
+
+```{r}
+set.seed(42)
+n = 100000
+target.str = rep(0, 20)
+alphabet.len = 4
+gamma = 1
+start.str = sample(0:(alphabet.len - 1), 20, TRUE)
+str.sample <- MH.str(n, target.str, alphabet.len, gamma, start.str)
+discrepancy = numeric(n)
+idx = numeric(0)
+for (i in 1:n){
+  discrepancy[i] = sum(str.sample$R[i] != str.sample$Rcpp[i])
+  if (discrepancy[i] > 0) idx = c(idx, i)
+}
+print(list(discr = sum(discrepancy), idx = idx))
+```
+
+```{r}
+print(list(R = str.sample$R[37:38, ], Rcpp = str.sample$Rcpp[37:38, ], pos.change = str.sample$Rcpp[37:38], 
+           shift = str.sample$shift[37:38], unif01 = str.sample$unif01[37:38]))
+```
+
+```{r}
+hist(apply(str.sample$R, 1, function(x) sum(x == target.str)))
+hist(apply(str.sample$Rcpp, 1, function(x) sum(x == target.str)))
+```
+
+```{r}
+hamming.score.prob <- function(len, thr, alphabet.len){
+  sum = 0
+  p = 1 / alphabet.len
+  for(i in thr:len){
+    sum = sum + choose(len, i) * p ** i * (1 - p) ** (len - i) 
+  }
+  return(sum)
+}
+2
+```
+
+
+
+```{r}
+gamma = 1
+swap.batch.sizes = c(1)#c(1, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100)
+nchains = c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)#c(1, 2, 5, 10, 20, 30)
+MSE.column = numeric(0)
+gamma1.column = numeric(0)
+step.column = numeric(0)
+nchains.column = numeric(0)
+est.column = numeric(0)
+total.iter = length(swap.batch.sizes) * length(nchains) * 100
+vars.column = numeric(0)
+curr.iter = 0
+mse.column = numeric(0)
+curr.iter = 1
+
+pb <- txtProgressBar(min = 0,      # Minimum value of the progress bar
+                     max = total.iter, # Maximum value of the progress bar
+                     style = 3,    # Progress bar style (also available style = 1 and style = 2)
+                     width = 50,   # Progress bar width. Defaults to getOption("width")
+                     char = "=")   # Character used to create the bar
+
+for (sbs in swap.batch.sizes){
+  for (chains in nchains){
+    set.seed(24)
+    est = numeric(100)
+    vars = numeric(100)
+    for (i in 1:100){
+      curr.iter = curr.iter + 1
+      setTxtProgressBar(pb, curr.iter)
+      res <- MC3.UC.Rcpp(10^5, rep(0, 20), 15, 4, gamma, gamma, chains, sbs)
+      est[i] = res$p
+      vars[i] = res$var
+      #print(curr.iter / total.iter)
+    }
+    gamma1.column = c(gamma1.column, gamma)
+    step.column = c(step.column, sbs)
+    nchains.column = c(nchains.column, chains)
+    est.column = c(est.column, mean(est))
+    vars.column = c(vars.column, mean(vars))
+    mse.column = c(mse.column, mean((est - hamming.score.prob(20, 15, 4))^2))
+  }
+}
+
+optimal.nchains.search.1000.cont.df <- data.frame(gamma = gamma1.column, 
+                                    sbs = step.column,
+                                    nchains = nchains.column,
+                                    est = est.column, 
+                                    var = vars.column,
+                                    mse = mse.column)
+write.csv(optimal.nchains.search.1000.cont.df, './Modeling/optimal_nchains_search_df_1000_cont.csv')
+```
+
+```{r}
+optimal.nchains.search.1000.cont.df[order(optimal.nchains.search.1000.cont.df$var),]
+```
+
