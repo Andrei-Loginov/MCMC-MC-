@@ -441,26 +441,42 @@ write.csv(MCMC_rN, './Modeling/MCMC_rN.csv')
 MCMC_rN[order(MCMC_rN$mse),]
 ```
 
-
 ```{r}
-ggplot() + 
-  geom_point(data = MCMC_rN, aes(x = nchains, y = log(mse)), color = 'blue')  +
-  geom_point(data = parameter.search.bound.r, aes(x = nchains, y = log(mse)))
-```
-
-
-```{r}
-ggplot() + 
-  geom_point(data = MCMC_rN, aes(x = nchains, y = log(var)), color = 'blue')  +
-  geom_point(data = parameter.search.bound.r, aes(x = nchains, y = log(var)))
-
+data.frame(r = c(MCMC_rN$nchain, parameter.search.bound.r$nchains),
+           est = c(MCMC_rN$est, parameter.search.bound.r$est),
+           var = c(MCMC_rN$var, parameter.search.bound.r$var),
+           bias = c(MCMC_rN$bias, parameter.search.bound.r$bias),
+           mse = c(MCMC_rN$mse, parameter.search.bound.r$mse),
+           method = c(rep('MCMC', 20), rep('MC3', 20))) %>% 
+  ggplot(aes(x = r, y = log(mse))) + 
+  geom_point(aes(color = factor(method))) + 
+  ggtitle('Сравнение MSE оценок MC^3 и MCMC')
 ```
 
 ```{r}
-ggplot() + 
-  geom_point(data = MCMC_rN, aes(x = nchains, y = log(bias)), color = 'blue')  +
-  geom_point(data = parameter.search.bound.r, aes(x = nchains, y = log(bias)))
+data.frame(r = c(MCMC_rN$nchain, parameter.search.bound.r$nchains),
+           est = c(MCMC_rN$est, parameter.search.bound.r$est),
+           var = c(MCMC_rN$var, parameter.search.bound.r$var),
+           bias = c(MCMC_rN$bias, parameter.search.bound.r$bias),
+           mse = c(MCMC_rN$mse, parameter.search.bound.r$mse),
+           method = c(rep('MCMC', 20), rep('MC3', 20))) %>% 
+  ggplot(aes(x = r, y = log(var))) + 
+  geom_point(aes(color = factor(method))) + 
+  ggtitle('Сравнение дисперсии оценок MC^3 и MCMC')
+```
 
+
+
+```{r}
+data.frame(r = c(MCMC_rN$nchain, parameter.search.bound.r$nchains),
+           est = c(MCMC_rN$est, parameter.search.bound.r$est),
+           var = c(MCMC_rN$var, parameter.search.bound.r$var),
+           bias = c(MCMC_rN$bias, parameter.search.bound.r$bias),
+           mse = c(MCMC_rN$mse, parameter.search.bound.r$mse),
+           method = c(rep('MCMC', 20), rep('MC3', 20))) %>% 
+  ggplot(aes(x = r, y = log(bias))) + 
+  geom_point(aes(color = factor(method))) + 
+  ggtitle('Сравнение смещения оценок MC^3 и MCMC')
 ```
 
 
