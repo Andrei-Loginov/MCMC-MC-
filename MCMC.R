@@ -39,3 +39,4 @@ MH.UC.Rcpp <- function(N, target.str, thr, alphabet.len, gamma, batch = F,
   }
 }
 
+MH.UC.Rcpp(10^5, rep(0, 20), 15, 4, 1)

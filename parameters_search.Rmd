@@ -7,7 +7,13 @@ output: html_notebook
 library(dplyr)
 library(Rcpp)
 library(ggplot2)
+library(gridExtra)
 ```
+
+```{r}
+sourceCpp('MH.cpp')
+```
+
 
 ```{r}
 first.gamma = c(0.5, 1, 1.5, 2, 2.5)
@@ -273,3 +279,188 @@ parameter.search.bound.sbs.r %>%
 ```
 
 Наименьшее значение среднеквадратичной ошибки достигается при $T = 1$, поэтому, полагаю, что в дальнейшем лучше рассматривать только $T = 1$. 
+
+
+```{r}
+gamma = c(1)
+sbs = c(1)
+nchains = 1:20
+N = 10^5
+m = 1000
+
+total.iter = length(sbs) * length(nchains) * m
+curr.iter = 0
+pb <- txtProgressBar(min = 0,      # Minimum value of the progress bar
+                     max = total.iter, # Maximum value of the progress bar
+                     style = 3,    # Progress bar style (also available style = 1 and style = 2)
+                     width = 50,   # Progress bar width. Defaults to getOption("width")
+                     char = "=")   # Character used to create the bar
+
+MSE.column = numeric(0)
+gamma1.column = numeric(0)
+omega.column = numeric(0)
+step.column = numeric(0)
+nchains.column = numeric(0)
+est.column = numeric(0)
+vars.column = numeric(0)
+mse.column = numeric(0)
+
+for (gamma1 in gamma) {
+    for (batch in sbs) {
+      for (chain in nchains) {
+        set.seed(24)
+        est = numeric(m)
+        vars = numeric(m)
+        for (i in 1:m) {
+          curr.iter = curr.iter + 1
+          setTxtProgressBar(pb, curr.iter)
+          res <- MC3.UC.Rcpp(N, rep(0, 20), 15, 4, gamma1, gamma1, chain, batch )
+          est[i] = res$p
+          vars[i] = res$var
+        }
+        gamma1.column = c(gamma1.column, gamma1)
+        step.column = c(step.column, batch)
+        nchains.column = c(nchains.column, chain)
+        est.column = c(est.column, mean(est))
+        vars.column = c(vars.column, mean(vars))
+        mse.column = c(mse.column, mean((est - hamming.score.prob(20, 15, 4))^2))
+      }
+    }
+}
+
+parameter.search.bound.r <- data.frame(gamma = gamma1.column, 
+                                 sbs = step.column,
+                                 nchains = nchains.column,
+                                 est = est.column,
+                                 var = vars.column,
+                                 mse = mse.column
+                                 )
+write.csv(parameter.search.bound.r, './Modeling/parameter_search_bound_r.csv')
+
+```
+
+```{r}
+parameter.search.bound.r <- mutate(parameter.search.bound.r, bias = abs(est - hamming.score.prob(20, 15, 4)))
+```
+
+
+```{r}
+parameter.search.bound.r[order(parameter.search.bound.r$mse), ]
+```
+
+```{r}
+parameter.search.bound.r[order(parameter.search.bound.r$var), ]
+```
+
+```{r}
+parameter.search.bound.r[order(parameter.search.bound.r$bias), ]
+```
+
+
+```{r}
+plot.mse <- ggplot(parameter.search.bound.r, aes(x = nchains, y = log(mse))) + 
+  geom_point() + 
+  ggtitle('Зависимость MSE от числа цепей')
+
+plot.var <- ggplot(parameter.search.bound.r, aes(x = nchains, y = log(var))) + 
+  geom_point() + 
+  ggtitle('Зависимость дисперсии от числа цепей')
+
+plot.bias <- ggplot(parameter.search.bound.r, aes(x = nchains, y = log(bias))) + 
+  geom_point() + 
+  ggtitle('Зависимость смещения от числа цепей')
+
+grid.arrange(plot.mse, plot.var, plot.bias, ncol = 1)
+```
+
+```{r}
+plot.mse
+plot.var
+plot.bias
+```
+
+Кажется, что MSE, начиная с $r = 6$, уже не так быстро убывает, поэтому полагаю, что выигрыш в 20% в точности может не стоить увеличения трудоемкости в разы. 
+
+Достаточно странным выглядит график для смещения. 
+
+
+# $MCMC$ с длиной траектории, пропорциональной числу цпей в $MC^3$
+
+```{r}
+gamma = 1
+nchains = 1:20
+m = 1000
+N = 10^5
+
+gamma.column = numeric(0)
+nchains.column = numeric(0)
+est.column = numeric(0)
+vars.column = numeric(0)
+mse.column = numeric(0)
+
+
+total.iter = length(nchains) * m
+curr.iter = 0
+pb <- txtProgressBar(min = 0,      # Minimum value of the progress bar
+                     max = total.iter, # Maximum value of the progress bar
+                     style = 3,    # Progress bar style (also available style = 1 and style = 2)
+                     width = 50,   # Progress bar width. Defaults to getOption("width")
+                     char = "=")   # Character used to create the bar
+
+
+for (r in nchains){
+  set.seed(24)
+  est = numeric(m)
+  var = numeric(m)
+  for (i in 1:m) {
+    curr.iter = curr.iter + 1
+    setTxtProgressBar(pb, curr.iter)
+    res <- MH.UC.Rcpp(N * r, rep(0, 20), 15, 4, gamma, TRUE)
+    est[i] = res$p
+    vars[i] = res$var
+  }
+  gamma.column = c(gamma.column, gamma)
+  nchains.column = c(nchains.column, r)
+  est.column = c(est.column, mean(est))
+  vars.column = c(vars.column, mean(vars))
+  mse.column = c(mse.column, mean((est - hamming.score.prob(20, 15, 4))^2))
+  
+}
+
+MCMC_rN <- data.frame(gamma = gamma.column, 
+                      nchain = nchains.column,
+                      est = est.column,
+                      var = vars.column,
+                      mse = mse.column,
+                      bias = abs(hamming.score.prob(20, 15, 4) - est.column))
+write.csv(MCMC_rN, './Modeling/MCMC_rN.csv')
+
+```
+
+```{r}
+MCMC_rN[order(MCMC_rN$mse),]
+```
+
+
+```{r}
+ggplot() + 
+  geom_point(data = MCMC_rN, aes(x = nchains, y = log(mse)), color = 'blue')  +
+  geom_point(data = parameter.search.bound.r, aes(x = nchains, y = log(mse)))
+```
+
+
+```{r}
+ggplot() + 
+  geom_point(data = MCMC_rN, aes(x = nchains, y = log(var)), color = 'blue')  +
+  geom_point(data = parameter.search.bound.r, aes(x = nchains, y = log(var)))
+
+```
+
+```{r}
+ggplot() + 
+  geom_point(data = MCMC_rN, aes(x = nchains, y = log(bias)), color = 'blue')  +
+  geom_point(data = parameter.search.bound.r, aes(x = nchains, y = log(bias)))
+
+```
+
+

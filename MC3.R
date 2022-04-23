@@ -46,5 +46,27 @@ MC3.UC.Rcpp <- function(N, target.str, thr, alphabet.len, first.gamma, last.gamm
 }
 
 
-
+MC3.UC.mult.Rcpp <- function(N, target.str, thr, alphabet.len, first.gamma, omega, nchains,
+                        step, batch = T, ACF = F){
+  str.len = length(target.str)
+  
+  gammas <- vapply(0:(nchains - 1), function(i) first.gamma * omega^i, numeric(1))
+  scores <- MC3ScoreSample(N + 50000, target.str, alphabet.len, gammas, step)
+  scores <- scores[-(1:50000)]
+  Z = const.estimator(str.len, alphabet.len, gammas[1], 2*10^5)
+  q = vapply(scores, function(x)  exp(x * gammas[1]) * Z, numeric(1))
+  h = as.numeric(scores >= thr)
+  if (ACF){
+    acf(scores)
+  }
+  if (batch){
+    u = trunc(sqrt(N))
+    v = trunc(sqrt(N))
+    Y = vapply(1:u, function(x) mean(h[((x-1)*v):(x*v-1)] / q[((x-1)*v):(x*v-1)]),numeric(1))
+    p_est = mean(h / q)
+    var_est =  (v / (u - 1) * sum((Y - p_est)^2)) / (N)
+    return(list(p = p_est, var = var_est))
+  }
+  return(mean(h / q))
+}
 
