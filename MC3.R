@@ -7,7 +7,8 @@ F <- FALSE
 
 const.estimator <- function(str.len, alphabet.len, gamma, N){
   start.str = sample(0:(alphabet.len - 1), str.len, replace = T)
-  scores <- MHScoreSample(N, rep(0, str.len), alphabet.len, gamma, start.str)
+  scores <- MHScoreSample(N + 50000, rep(0, str.len), alphabet.len, gamma, start.str)
+  scores <- scores[-(1:50000)]
   weight = vapply(scores, function(x) exp(-x*gamma), numeric(1))
   return(mean(weight))
 }
@@ -28,7 +29,7 @@ MC3.UC.Rcpp <- function(N, target.str, thr, alphabet.len, first.gamma, last.gamm
     scores <- MC3ScoreSample(N + 50000, target.str, alphabet.len, gammas, step)
   }
   scores <- scores[-(1:50000)]
-  Z = const.estimator(str.len, alphabet.len, gammas[1], 2*10^5)
+  Z = const.estimator(str.len, alphabet.len, gammas[1], N)
   q = vapply(scores, function(x)  exp(x * gammas[1]) * Z, numeric(1))
   h = as.numeric(scores >= thr)
   if (ACF){
@@ -53,7 +54,7 @@ MC3.UC.mult.Rcpp <- function(N, target.str, thr, alphabet.len, first.gamma, omeg
   gammas <- vapply(0:(nchains - 1), function(i) first.gamma * omega^i, numeric(1))
   scores <- MC3ScoreSample(N + 50000, target.str, alphabet.len, gammas, step)
   scores <- scores[-(1:50000)]
-  Z = const.estimator(str.len, alphabet.len, gammas[1], 2*10^5)
+  Z = const.estimator(str.len, alphabet.len, gammas[1], N)
   q = vapply(scores, function(x)  exp(x * gammas[1]) * Z, numeric(1))
   h = as.numeric(scores >= thr)
   if (ACF){
