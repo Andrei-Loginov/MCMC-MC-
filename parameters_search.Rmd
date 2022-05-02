@@ -479,4 +479,174 @@ data.frame(r = c(MCMC_rN$nchain, parameter.search.bound.r$nchains),
   ggtitle('Сравнение смещения оценок MC^3 и MCMC')
 ```
 
+```{r}
+m <- 1000
+N = 2 * 10^5
+sbs = 1
 
+total.iter = 1000
+curr.iter = 0
+pb <- txtProgressBar(min = 0,      # Minimum value of the progress bar
+                     max = total.iter, # Maximum value of the progress bar
+                     style = 3,    # Progress bar style (also available style = 1 and style = 2)
+                     width = 50,   # Progress bar width. Defaults to getOption("width")
+                     char = "=")   # Character used to create the bar
+
+set.seed(24)
+est = numeric(m)
+var = numeric(m)
+for (i in 1:m) {
+  res <- MC3.UC.Rcpp(N, rep(0, 20), 15, 4, 1, 1, 10, sbs)
+  curr.iter = curr.iter + 1
+  setTxtProgressBar(pb, curr.iter)
+  est[i] = res$p
+  vars[i] = res$var
+}
+
+MC3.2N.T1 <- data.frame(est = mean(est), 
+                        var = mean(vars),
+                        sample.var = var(est),
+                        mse = mean((est - hamming.score.prob(20, 15, 4))^2))
+```
+
+
+```{r}
+m <- 1000
+N =  10^5
+sbs = 10
+nchains = 10
+
+total.iter = 1000
+curr.iter = 0
+pb <- txtProgressBar(min = 0,      # Minimum value of the progress bar
+                     max = total.iter, # Maximum value of the progress bar
+                     style = 3,    # Progress bar style (also available style = 1 and style = 2)
+                     width = 50,   # Progress bar width. Defaults to getOption("width")
+                     char = "=")   # Character used to create the bar
+
+set.seed(24)
+est = numeric(m)
+var = numeric(m)
+for (i in 1:m) {
+  res <- MC3.UC.Rcpp(N, rep(0, 20), 15, 4, 1, 1, nchains, sbs)
+  curr.iter = curr.iter + 1
+  setTxtProgressBar(pb, curr.iter)
+  est[i] = res$p
+  vars[i] = res$var
+}
+
+MC3.N.T10 <- data.frame(est = mean(est), 
+                        var = mean(vars),
+                        sample.var = var(est),
+                        mse = mean((est - hamming.score.prob(20, 15, 4))^2))
+```
+
+
+```{r}
+m <- 1000
+N =  2 * 10^5
+sbs = 10
+nchains = 10
+
+total.iter = 1000
+curr.iter = 0
+pb <- txtProgressBar(min = 0,      # Minimum value of the progress bar
+                     max = total.iter, # Maximum value of the progress bar
+                     style = 3,    # Progress bar style (also available style = 1 and style = 2)
+                     width = 50,   # Progress bar width. Defaults to getOption("width")
+                     char = "=")   # Character used to create the bar
+
+set.seed(24)
+est = numeric(m)
+var = numeric(m)
+for (i in 1:m) {
+  res <- MC3.UC.Rcpp(N, rep(0, 20), 15, 4, 1, 1, nchains, sbs)
+  curr.iter = curr.iter + 1
+  setTxtProgressBar(pb, curr.iter)
+  est[i] = res$p
+  vars[i] = res$var
+}
+
+MC3.2N.T10 <- data.frame(est = mean(est),
+                        var = mean(vars),
+                        sample.var = var(est),
+                        mse = mean((est - hamming.score.prob(20, 15, 4))^2))
+```
+
+
+```{r}
+data.frame(r = c(MCMC_rN$nchain, parameter.search.bound.r$nchains, 10, 10, 10),
+           est = c(MCMC_rN$est, parameter.search.bound.r$est, MC3.2N.T1$est, MC3.N.T10$est, MC3.2N.T10$est),
+           var = c(MCMC_rN$var, parameter.search.bound.r$var, MC3.2N.T1$var, MC3.N.T10$var, MC3.2N.T10$var),
+           mse = c(MCMC_rN$mse, parameter.search.bound.r$mse, MC3.2N.T1$mse, MC3.N.T10$mse, MC3.2N.T10$mse),
+           method = c(rep('MCMC', 20), rep('MC3', 20), 'MC3.2N.T1', 'MC3.N.T10', 'MC3.2N.T10')) %>% 
+  ggplot(aes(x = r, y = log(mse))) + 
+  geom_point(aes(color = factor(method))) + 
+  ggtitle('Сравнение MSE оценок MC^3 и MCMC')
+```
+
+
+```{r}
+m <- 100
+N =  10^6
+sbs = 1
+
+total.iter = 200
+curr.iter = 0
+pb <- txtProgressBar(min = 0,      # Minimum value of the progress bar
+                     max = total.iter, # Maximum value of the progress bar
+                     style = 3,    # Progress bar style (also available style = 1 and style = 2)
+                     width = 50,   # Progress bar width. Defaults to getOption("width")
+                     char = "=")   # Character used to create the bar
+
+set.seed(24)
+est = numeric(m)
+var = numeric(m)
+for (i in 1:m) {
+  res <- MC3.UC.Rcpp(N, rep(0, 20), 15, 4, 1, 1, 10, sbs)
+  curr.iter = curr.iter + 1
+  setTxtProgressBar(pb, curr.iter)
+  est[i] = res$p
+  vars[i] = res$var
+}
+
+MC3.10N.T1 <- data.frame(est = mean(est), 
+                        var = mean(vars),
+                        sample.var = var(est),
+                        mse = mean((est - hamming.score.prob(20, 15, 4))^2))
+```
+
+
+```{r}
+MC3.5N.T1
+```
+
+```{r}
+m <- 100
+N =  10^6
+sbs = 10
+
+total.iter = m
+curr.iter = 0
+pb <- txtProgressBar(min = 0,      # Minimum value of the progress bar
+                     max = total.iter, # Maximum value of the progress bar
+                     style = 3,    # Progress bar style (also available style = 1 and style = 2)
+                     width = 50,   # Progress bar width. Defaults to getOption("width")
+                     char = "=")   # Character used to create the bar
+
+set.seed(24)
+est = numeric(m)
+var = numeric(m)
+for (i in 1:m) {
+  res <- MC3.UC.Rcpp(N, rep(0, 20), 15, 4, 1, 1, 10, sbs)
+  curr.iter = curr.iter + 1
+  setTxtProgressBar(pb, curr.iter)
+  est[i] = res$p
+  vars[i] = res$var
+}
+
+MC3.10N.T10 <- data.frame(est = mean(est), 
+                        var = mean(vars),
+                        sample.var = var(est),
+                        mse = mean((est - hamming.score.prob(20, 15, 4))^2))
+```
