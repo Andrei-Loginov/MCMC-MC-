@@ -13,6 +13,11 @@ const.estimator <- function(str.len, alphabet.len, gamma, N){
   return(mean(weight))
 }
 
+N.batches <- function(N) {
+  u <- floor(sqrt(N))
+  while (N %% u != 0) u <- u - 1
+  return(u)
+}
 
 
 MC3.UC.Rcpp <- function(N, target.str, thr, alphabet.len, first.gamma, last.gamma, nchains,
@@ -36,12 +41,15 @@ MC3.UC.Rcpp <- function(N, target.str, thr, alphabet.len, first.gamma, last.gamm
     acf(scores)
   }
   if (batch){
-    u = trunc(sqrt(N))
-    v = trunc(sqrt(N))
-    Y = vapply(1:u, function(x) mean(h[((x-1)*v):(x*v-1)] / q[((x-1)*v):(x*v-1)]),numeric(1))
-    p_est = mean(h / q)
-    var_est =  (v / (u - 1) * sum((Y - p_est)^2)) / (N)
+    u = N.batches(N)
+    v = N / u
+    Y = vapply(1:u, 
+               function(n) mean(h[((n - 1) * v + 1) : (n * v)] * weights[((n - 1) * v + 1) : (n * v)]) / mean(weights),
+               numeric(1))
+    p_est = sum(h*weights) / sum(weights)
+    var_est = (v / (u - 1)) * sum((Y - p_est)^2) / N
     return(list(p = p_est, var = var_est))
+    
   }
   return(mean(h / q))
 }
@@ -61,12 +69,15 @@ MC3.UC.mult.Rcpp <- function(N, target.str, thr, alphabet.len, first.gamma, omeg
     acf(scores)
   }
   if (batch){
-    u = trunc(sqrt(N))
-    v = trunc(sqrt(N))
-    Y = vapply(1:u, function(x) mean(h[((x-1)*v):(x*v-1)] / q[((x-1)*v):(x*v-1)]),numeric(1))
-    p_est = mean(h / q)
-    var_est =  (v / (u - 1) * sum((Y - p_est)^2)) / (N)
+    u = N.batches(N)
+    v = N / u
+    Y = vapply(1:u, 
+               function(n) mean(h[((n - 1) * v + 1) : (n * v)] * weights[((n - 1) * v + 1) : (n * v)]) / mean(weights),
+               numeric(1))
+    p_est = sum(h*weights) / sum(weights)
+    var_est = (v / (u - 1)) * sum((Y - p_est)^2) / N
     return(list(p = p_est, var = var_est))
+    
   }
   return(mean(h / q))
 }

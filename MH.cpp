@@ -145,7 +145,6 @@ IntegerVector MC3ScoreSample(int N, const IntegerVector& targetStr, int alphabet
       int proposedScore = HammingScore(targetStr, proposedStr);
       //int delta = proposedScore - scores[j, i - 1];
       int delta = proposedScore - getElement(scores, j, i - 1);
-      //if (j > 2) return(IntegerVector(1));
       double A = exp(gammas[j] * delta);
       
       if (A < unif01[unifCounter++]) {
@@ -165,7 +164,7 @@ IntegerVector MC3ScoreSample(int N, const IntegerVector& targetStr, int alphabet
       IntegerVector perm = sample(range(0, nchains - 1), nchains, false);
       for (int j = 0; j < nchains / 2; ++j){
         int delta = getElement(scores, perm[j], i) - getElement(scores, perm[nchains - j - 1], i);
-        double A = exp((gammas[perm[j]] - gammas[perm[nchains - j - 1]]) * delta);
+        double A = exp(-(gammas[perm[j]] - gammas[perm[nchains - j - 1]]) * delta);
         if (A > unif01[unifCounter++]) {
           //std::swap(scores[perm[j]], scores[perm[nchains - j - 1]]);
           swapElements(scores, perm[j], i, perm[nchains - j - 1], i);

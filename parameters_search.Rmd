@@ -16,10 +16,10 @@ sourceCpp('MH.cpp')
 
 
 ```{r}
-first.gamma = c(0.5, 1, 1.5, 2, 2.5)
-last.gamma = c(0.5, 1, 1.5, 2, 2.5)
-sbs = c(10, 50, 100)
-nchains = c(1, 5, 10)
+first.gamma = c(0.5, 1, 1.5, 2)
+last.gamma = c(0.5, 1, 1.5, 2)
+sbs = c(1, 10, 50, 100)
+nchains = c(1, 2, 5, 10)
 N = 10^5
 m = 50
 
@@ -79,6 +79,11 @@ write.csv(parameter.search.bound, './Modeling/parameter_search_boundary_gamma.cs
 ```
 
 ```{r}
+parameter.bust.bound <- read.csv( './Modeling/parameter_search_boundary_gamma.csv')
+```
+
+
+```{r}
 parameter.search.bound <- mutate(parameter.search.bound, bias = abs(est - hamming.score.prob(20, 15, 4)))
 ```
 
@@ -92,15 +97,99 @@ head(parameter.search.bound[order(parameter.search.bound$bias),])
 ```
 
 
+Граничный способ задания для малых вероятностей
+```{r}
+first.gamma = c(0.5, 1, 1.5, 2)
+last.gamma = c(0.5, 1, 1.5, 2)
+sbs = c(1, 10, 50, 100)
+nchains = c(1, 2, 5, 10)
+N = 10^5
+m = 50
+thr = 18
+
+
+total.iter = length(first.gamma) * length(last.gamma) * length(sbs) * length(nchains) * m
+curr.iter = 0
+pb <- txtProgressBar(min = 0,      # Minimum value of the progress bar
+                     max = total.iter, # Maximum value of the progress bar
+                     style = 3,    # Progress bar style (also available style = 1 and style = 2)
+                     width = 50,   # Progress bar width. Defaults to getOption("width")
+                     char = "=")   # Character used to create the bar
+
+MSE.column = numeric(0)
+gamma1.column = numeric(0)
+gamma2.column = numeric(0)
+step.column = numeric(0)
+nchains.column = numeric(0)
+est.column = numeric(0)
+vars.column = numeric(0)
+mse.column = numeric(0)
+sample.var.column <- numeric(0)
+
+
+for (gamma1 in first.gamma) {
+  for (gamma2 in last.gamma) {
+    for (batch in sbs) {
+      for (chain in nchains) {
+        set.seed(24)
+        est = numeric(m)
+        vars = numeric(m)
+        for (i in 1:m) {
+          curr.iter = curr.iter + 1
+          setTxtProgressBar(pb, curr.iter)
+          res <- MC3.UC.Rcpp(N, rep(0, 20), thr, 4, gamma1, gamma2, chain, batch)
+          est[i] = res$p
+          vars[i] = res$var
+        }
+        gamma1.column = c(gamma1.column, gamma1)
+        gamma2.column = c(gamma2.column, gamma2)
+        step.column = c(step.column, batch)
+        nchains.column = c(nchains.column, chain)
+        est.column = c(est.column, mean(est))
+        vars.column = c(vars.column, mean(vars))
+        mse.column = c(mse.column, mean((est - hamming.score.prob(20, thr, 4))^2))
+        sample.var.column = c(sample.var.column, var(est))
+      }
+    }
+  }
+}
+
+parameter.search.bound_sp <- data.frame(gamma1 = gamma1.column, 
+                                 gamma2 = gamma2.column,
+                                 dgamma = gamma2.column - gamma1.column,
+                                 sbs = step.column,
+                                 nchains = nchains.column,
+                                 est = est.column,
+                                 var = vars.column,
+                                 sample_var = sample.var.column,
+                                 mse = mse.column
+                                 )
+write.csv(parameter.search.bound_sp, './Modeling/parameter_search_boundary_gamma_sp.csv')
+```
+
+```{r}
+parameter.search.bound_sp = read.csv('./Modeling/parameter_search_boundary_gamma_sp.csv')
+```
+
+
+```{r}
+parameter.search.bound_sp[order(parameter.search.bound_sp$mse),]
+```
+
+
+
 ## Граничный способ задания $\Gamma$
 ### Зависимость дисперсии от разницы между $\Delta \gamma = \gamma_{r - 1} - \gamma_0$, где $r$ --- число цепей.
 
 ```{r}
-parameter.search.bound %>%
+parameter.search.bound_sp%>%
   filter(nchains > 1) %>%
   ggplot(aes(x = dgamma, y = log(mse))) + 
-    geom_point(aes(color = factor(sbs))) +
-    facet_wrap(~nchains) + 
+    geom_point(aes(color = factor(gamma1))) +
+    geom_line(aes(color = factor(gamma1))) +
+    facet_wrap(vars(nchains, sbs)) +
+    labs(color = 'gamma_0') + 
+    xlab('Delta gamma')
     ggtitle('Зависимость MSE от swap batch size при 5 и 10 цепях')
 ```
 Можем заметить, что при большем числе цепей получается меньшая среднеквадратичная ошибка. 
@@ -109,13 +198,16 @@ parameter.search.bound %>%
 
 ```{r}
 parameter.search.bound %>%
-  filter(nchains > 1 & dgamma <= 0) %>%
-  ggplot(aes(x = dgamma, y = log(mse))) + 
+  filter(dgamma == 0) %>%
+  ggplot(aes(x = gamma1, y = log(mse))) + 
     geom_point(aes(color = factor(sbs))) +
-    facet_wrap(~nchains)
+    geom_line(aes(color = factor(sbs))) + 
+    facet_wrap(~nchains) + 
+    xlab('gamma_0') + 
+    labs(color = 'T')
 ```
 
-## Мульипликативный способ задания $\Gamma$
+## Мультипликативный способ задания $\Gamma$
 Набор $\Gamma$ определяется $\gamma_0$ и множителем $\omega$. 
 
 ```{r}
@@ -153,7 +245,7 @@ for (gamma1 in first.gamma) {
         for (i in 1:m) {
           curr.iter = curr.iter + 1
           setTxtProgressBar(pb, curr.iter)
-          res <- MC3.UC.mult.Rcpp(N, rep(0, 20), 15, 4, gamma1, omega, chain, batch)
+          res <- MC3.UC.mult.Rcpp(N, rep(0, 20), 18, 4, gamma1, omega, chain, batch)
           est[i] = res$p
           vars[i] = res$var
         }
@@ -163,7 +255,7 @@ for (gamma1 in first.gamma) {
         nchains.column = c(nchains.column, chain)
         est.column = c(est.column, mean(est))
         vars.column = c(vars.column, mean(vars))
-        mse.column = c(mse.column, mean((est - hamming.score.prob(20, 15, 4))^2))
+        mse.column = c(mse.column, mean((est - hamming.score.prob(20, 18, 4))^2))
       }
     }
   }
@@ -181,12 +273,56 @@ write.csv(parameter.search.mult, './Modeling/parameter_search_mult_gamma.csv')
 ```
 
 ```{r}
+for (gamma1 in first.gamma) {
+  for (omega in c(0.75)) {
+    for (batch in sbs) {
+      for (chain in nchains) {
+        set.seed(24)
+        est = numeric(m)
+        vars = numeric(m)
+        for (i in 1:m) {
+          curr.iter = curr.iter + 1
+          setTxtProgressBar(pb, curr.iter)
+          res <- MC3.UC.mult.Rcpp(N, rep(0, 20), 18, 4, gamma1, omega, chain, batch)
+          est[i] = res$p
+          vars[i] = res$var
+        }
+        gamma1.column = c(gamma1.column, gamma1)
+        omega.column = c(omega.column, omega)
+        step.column = c(step.column, batch)
+        nchains.column = c(nchains.column, chain)
+        est.column = c(est.column, mean(est))
+        vars.column = c(vars.column, mean(vars))
+        mse.column = c(mse.column, mean((est - hamming.score.prob(20, 18, 4))^2))
+      }
+    }
+  }
+}
+
+parameter.search.mult <- data.frame(gamma1 = gamma1.column, 
+                                 omega = omega.column,
+                                 sbs = step.column,
+                                 nchains = nchains.column,
+                                 est = est.column,
+                                 var = vars.column,
+                                 mse = mse.column
+                                 )
+write.csv(parameter.search.mult, './Modeling/parameter_search_mult_gamma.csv')
+```
+
+
+```{r}
+parameter.search.mult <- read.csv('./Modeling/parameter_search_mult_gamma.csv')
+```
+
+
+```{r}
 parameter.search.mult = mutate(parameter.search.mult, bias = abs(est - hamming.score.prob(20, 15, 4)))
 ```
 
 
 ```{r}
-head(parameter.search.mult[order(parameter.search.mult$mse),])
+(parameter.search.mult[order(parameter.search.mult$mse),])
 ```
 
 ```{r}
@@ -360,14 +496,17 @@ parameter.search.bound.r[order(parameter.search.bound.r$bias), ]
 ```{r}
 plot.mse <- ggplot(parameter.search.bound.r, aes(x = nchains, y = log(mse))) + 
   geom_point() + 
+  geom_line()
   ggtitle('Зависимость MSE от числа цепей')
 
 plot.var <- ggplot(parameter.search.bound.r, aes(x = nchains, y = log(var))) + 
   geom_point() + 
+  geom_line()
   ggtitle('Зависимость дисперсии от числа цепей')
 
 plot.bias <- ggplot(parameter.search.bound.r, aes(x = nchains, y = log(bias))) + 
   geom_point() + 
+  geom_line()
   ggtitle('Зависимость смещения от числа цепей')
 
 grid.arrange(plot.mse, plot.var, plot.bias, ncol = 1)
@@ -438,6 +577,11 @@ write.csv(MCMC_rN, './Modeling/MCMC_rN.csv')
 ```
 
 ```{r}
+MCMC_rN <- read.csv( './Modeling/MCMC_rN.csv')
+```
+
+
+```{r}
 MCMC_rN[order(MCMC_rN$mse),]
 ```
 
@@ -450,6 +594,12 @@ data.frame(r = c(MCMC_rN$nchain, parameter.search.bound.r$nchains),
            method = c(rep('MCMC', 20), rep('MC3', 20))) %>% 
   ggplot(aes(x = r, y = log(mse))) + 
   geom_point(aes(color = factor(method))) + 
+  labs(color = 'Method') + 
+  theme_bw() + 
+  theme(text = element_text(size = 14)) + 
+  xlab(TeX('$r$')) + 
+  ylab(TeX('$\\log(MSE)$'))
+  
   ggtitle('Сравнение MSE оценок MC^3 и MCMC')
 ```
 
@@ -650,3 +800,670 @@ MC3.10N.T10 <- data.frame(est = mean(est),
                         sample.var = var(est),
                         mse = mean((est - hamming.score.prob(20, 15, 4))^2))
 ```
+
+# Посмотрим на дисперсии
+
+```{r}
+m <- 1000
+N = 10^5
+
+sbs = c(1, 10)
+nchains = 1:10
+gamma = 1
+
+total.iter = m * length(sbs) * length(nchains)
+curr.iter = 0
+pb <- txtProgressBar(min = 0,      # Minimum value of the progress bar
+                     max = total.iter, # Maximum value of the progress bar
+                     style = 3,    # Progress bar style (also available style = 1 and style = 2)
+                     width = 50,   # Progress bar width. Defaults to getOption("width")
+                     char = "=")   # Character used to create the bar
+
+MSE.column = numeric(0)
+gamma.column = numeric(0)
+step.column = numeric(0)
+nchains.column = numeric(0)
+est.column = numeric(0)
+vars.column = numeric(0)
+sample.var.column = numeric(0)
+mse.column = numeric(0)
+
+for (T in sbs){
+  for (r in nchains) {
+    set.seed(24)
+    est = numeric(m)
+    var = numeric(m)
+    for (i in 1:m) {
+      res <- MC3.UC.Rcpp(N, rep(0, 20), 15, 4, gamma, gamma, r, T)
+      curr.iter = curr.iter + 1
+      setTxtProgressBar(pb, curr.iter)
+      est[i] = res$p
+      var[i] = res$var
+    }
+    MSE.column = c(MSE.column, mean((est - hamming.score.prob(20, 15, 4))^2))
+    vars.column = c(vars.column, mean(var))
+    est.column = c(est.column, mean(est))
+    sample.var.column = c(sample.var.column, var(est))
+    step.column = c(step.column, T)
+    nchains.column = c(nchains.column, r)
+  }
+}
+
+
+variance.check.df <- data.frame(gamma = rep(gamma, length(nchains.column)),
+                                nchains = nchains.column,
+                                sbs = step.column,
+                                mse = MSE.column, 
+                                var = vars.column,
+                                sample_var = sample.var.column
+                                )
+write.csv(variance.check.df, './Modeling/MC3.variance.csv')
+```
+
+
+```{r}
+variance.check.df
+```
+
+```{r}
+variance.check.df %>%
+  dplyr::filter(sbs == 1 & nchains > 1) %>%
+ggplot(aes(x = var, y = sample_var)) + 
+  geom_point(aes(color = factor(nchains))) + 
+  ggtitle('Выборочная дисперсия и оцененная вдоль траектории') + 
+  xlab('Batch Means Variance') + 
+  ylab('Sample variance') + 
+  geom_smooth(method = 'lm')
+
+```
+
+
+```{r}
+summary(lm(var ~ sample_var, data = variance.check.df %>% dplyr::filter(sbs == 1 & nchains > 1)))
+
+
+```
+
+
+```{r}
+gamma = 1
+nchains = 1:10
+m = 1000
+N = 10^5
+
+gamma.column = numeric(0)
+nchains.column = numeric(0)
+est.column = numeric(0)
+vars.column = numeric(0)
+sample.var.column = numeric(0)
+mse.column = numeric(0)
+
+
+total.iter = length(nchains) * m
+curr.iter = 0
+pb <- txtProgressBar(min = 0,      # Minimum value of the progress bar
+                     max = total.iter, # Maximum value of the progress bar
+                     style = 3,    # Progress bar style (also available style = 1 and style = 2)
+                     width = 50,   # Progress bar width. Defaults to getOption("width")
+                     char = "=")   # Character used to create the bar
+
+
+for (r in nchains){
+  set.seed(24)
+  est = numeric(m)
+  var = numeric(m)
+  for (i in 1:m) {
+    curr.iter = curr.iter + 1
+    setTxtProgressBar(pb, curr.iter)
+    res <- MH.UC.Rcpp(N * r, rep(0, 20), 15, 4, gamma, TRUE)
+    est[i] = res$p
+    vars[i] = res$var
+  }
+  gamma.column = c(gamma.column, gamma)
+  nchains.column = c(nchains.column, r)
+  est.column = c(est.column, mean(est))
+  vars.column = c(vars.column, mean(vars))
+  mse.column = c(mse.column, mean((est - hamming.score.prob(20, 15, 4))^2))
+  sample.var.column = c(sample.var.column, var(est))
+  
+}
+
+MCMC_rN_var_check <- data.frame(gamma = gamma.column, 
+                      nchain = nchains.column,
+                      est = est.column,
+                      var = vars.column,
+                      sample_var = sample.var.column,
+                      mse = mse.column,
+                      bias = abs(hamming.score.prob(20, 15, 4) - est.column))
+write.csv(MCMC_rN_var_check, './Modeling/MCMC_var_check.csv')
+
+```
+
+```{r}
+MCMC_rN_var_check <- read.csv('./Modeling/MCMC_var_check.csv')
+```
+
+
+```{r}
+summary(lm(var ~ sample_var, data = MCMC_rN_var_check))
+```
+
+
+```{r}
+gamma = 1.15
+nchains = 1:5
+m = 1000
+N = 10^5
+
+gamma.column = numeric(0)
+nchains.column = numeric(0)
+est.column = numeric(0)
+vars.column = numeric(0)
+sample.var.column = numeric(0)
+mse.column = numeric(0)
+
+
+total.iter = length(nchains) * m
+curr.iter = 0
+pb <- txtProgressBar(min = 0,      # Minimum value of the progress bar
+                     max = total.iter, # Maximum value of the progress bar
+                     style = 3,    # Progress bar style (also available style = 1 and style = 2)
+                     width = 50,   # Progress bar width. Defaults to getOption("width")
+                     char = "=")   # Character used to create the bar
+
+
+for (r in nchains){
+  set.seed(24)
+  est = numeric(m)
+  var = numeric(m)
+  for (i in 1:m) {
+    curr.iter = curr.iter + 1
+    setTxtProgressBar(pb, curr.iter)
+    res <- MH.UC.Rcpp(N * r, rep(0, 20), 15, 4, gamma, TRUE)
+    est[i] = res$p
+    vars[i] = res$var
+  }
+  gamma.column = c(gamma.column, gamma)
+  nchains.column = c(nchains.column, r)
+  est.column = c(est.column, mean(est))
+  vars.column = c(vars.column, mean(vars))
+  mse.column = c(mse.column, mean((est - hamming.score.prob(20, 15, 4))^2))
+  sample.var.column = c(sample.var.column, var(est))
+  
+}
+
+MCMC_rN_var_check_1.15 <- data.frame(gamma = gamma.column, 
+                      nchain = nchains.column,
+                      est = est.column,
+                      var = vars.column,
+                      sample_var = sample.var.column,
+                      mse = mse.column,
+                      bias = abs(hamming.score.prob(20, 15, 4) - est.column))
+write.csv(MCMC_rN_var_check_1.15, './Modeling/MCMC_var_check_115.csv')
+
+```
+
+
+```{r}
+MCMC_rN_var_check_1.15 <- read.csv('./Modeling/MCMC_var_check_115.csv')
+```
+
+```{r}
+summary(lm(sample_var ~ var, data = MCMC_rN_var_check_1.15))
+```
+
+```{r}
+MCMC_rN_var_check_1.15 %>%
+ggplot(aes(x = var, y = sample_var)) + 
+  geom_point(aes(color = factor(nchain))) + 
+  ggtitle('Выборочная дисперсия и оцененная вдоль траектории') + 
+  xlab('Batch Means Variance') + 
+  ylab('Sample variance') + 
+  geom_smooth(method = 'lm')
+```
+
+
+```{r}
+gamma = 0.75
+nchains = 1:5
+m = 1000
+N = 10^5
+
+gamma.column = numeric(0)
+nchains.column = numeric(0)
+est.column = numeric(0)
+vars.column = numeric(0)
+sample.var.column = numeric(0)
+mse.column = numeric(0)
+
+
+total.iter = length(nchains) * m
+curr.iter = 0
+pb <- txtProgressBar(min = 0,      # Minimum value of the progress bar
+                     max = total.iter, # Maximum value of the progress bar
+                     style = 3,    # Progress bar style (also available style = 1 and style = 2)
+                     width = 50,   # Progress bar width. Defaults to getOption("width")
+                     char = "=")   # Character used to create the bar
+
+
+for (r in nchains){
+  set.seed(24)
+  est = numeric(m)
+  var = numeric(m)
+  for (i in 1:m) {
+    curr.iter = curr.iter + 1
+    setTxtProgressBar(pb, curr.iter)
+    res <- MH.UC.Rcpp(N * r, rep(0, 20), 15, 4, gamma, TRUE)
+    est[i] = res$p
+    vars[i] = res$var
+  }
+  gamma.column = c(gamma.column, gamma)
+  nchains.column = c(nchains.column, r)
+  est.column = c(est.column, mean(est))
+  vars.column = c(vars.column, mean(vars))
+  mse.column = c(mse.column, mean((est - hamming.score.prob(20, 15, 4))^2))
+  sample.var.column = c(sample.var.column, var(est))
+  
+}
+
+MCMC_rN_var_check_0.75 <- data.frame(gamma = gamma.column, 
+                      nchain = nchains.column,
+                      est = est.column,
+                      var = vars.column,
+                      sample_var = sample.var.column,
+                      mse = mse.column,
+                      bias = abs(hamming.score.prob(20, 15, 4) - est.column))
+write.csv(MCMC_rN_var_check_0.75, './Modeling/MCMC_var_check_gamma_075.csv')
+```
+
+```{r}
+MCMC_rN_var_check_0.75 <- read.csv('./Modeling/MCMC_var_check_gamma_075.csv')
+```
+
+```{r}
+summary(lm(sample_var ~ var, data = MCMC_rN_var_check_0.75))
+```
+
+
+```{r}
+gamma = 0.5
+nchains = 1:5
+m = 1000
+N = 10^5
+
+gamma.column = numeric(0)
+nchains.column = numeric(0)
+est.column = numeric(0)
+vars.column = numeric(0)
+sample.var.column = numeric(0)
+mse.column = numeric(0)
+
+
+total.iter = length(nchains) * m
+curr.iter = 0
+pb <- txtProgressBar(min = 0,      # Minimum value of the progress bar
+                     max = total.iter, # Maximum value of the progress bar
+                     style = 3,    # Progress bar style (also available style = 1 and style = 2)
+                     width = 50,   # Progress bar width. Defaults to getOption("width")
+                     char = "=")   # Character used to create the bar
+
+
+for (r in nchains){
+  set.seed(24)
+  est = numeric(m)
+  var = numeric(m)
+  for (i in 1:m) {
+    curr.iter = curr.iter + 1
+    setTxtProgressBar(pb, curr.iter)
+    res <- MH.UC.Rcpp(N * r, rep(0, 20), 15, 4, gamma, TRUE)
+    est[i] = res$p
+    vars[i] = res$var
+  }
+  gamma.column = c(gamma.column, gamma)
+  nchains.column = c(nchains.column, r)
+  est.column = c(est.column, mean(est))
+  vars.column = c(vars.column, mean(vars))
+  mse.column = c(mse.column, mean((est - hamming.score.prob(20, 15, 4))^2))
+  sample.var.column = c(sample.var.column, var(est))
+  
+}
+
+MCMC_rN_var_check_0.5 <- data.frame(gamma = gamma.column, 
+                      nchain = nchains.column,
+                      est = est.column,
+                      var = vars.column,
+                      sample_var = sample.var.column,
+                      mse = mse.column,
+                      bias = abs(hamming.score.prob(20, 15, 4) - est.column))
+write.csv(MCMC_rN_var_check_0.5, './Modeling/MCMC_var_check_gamma_05.csv')
+```
+
+
+```{r}
+MCMC_rN_var_check_0.5 <- read.csv('./Modeling/MCMC_var_check_gamma_05.csv')
+```
+
+```{r}
+summary(lm(sample_var ~ var, data = MCMC_rN_var_check_0.5))
+```
+
+
+
+
+```{r}
+gamma = 1.5
+nchains = 1:5
+m = 1000
+N = 10^5
+
+gamma.column = numeric(0)
+nchains.column = numeric(0)
+est.column = numeric(0)
+vars.column = numeric(0)
+sample.var.column = numeric(0)
+mse.column = numeric(0)
+
+
+total.iter = length(nchains) * m
+curr.iter = 0
+pb <- txtProgressBar(min = 0,      # Minimum value of the progress bar
+                     max = total.iter, # Maximum value of the progress bar
+                     style = 3,    # Progress bar style (also available style = 1 and style = 2)
+                     width = 50,   # Progress bar width. Defaults to getOption("width")
+                     char = "=")   # Character used to create the bar
+
+
+for (r in nchains){
+  set.seed(24)
+  est = numeric(m)
+  var = numeric(m)
+  for (i in 1:m) {
+    curr.iter = curr.iter + 1
+    setTxtProgressBar(pb, curr.iter)
+    res <- MH.UC.Rcpp(N * r, rep(0, 20), 15, 4, gamma, TRUE)
+    est[i] = res$p
+    vars[i] = res$var
+  }
+  gamma.column = c(gamma.column, gamma)
+  nchains.column = c(nchains.column, r)
+  est.column = c(est.column, mean(est))
+  vars.column = c(vars.column, mean(vars))
+  mse.column = c(mse.column, mean((est - hamming.score.prob(20, 15, 4))^2))
+  sample.var.column = c(sample.var.column, var(est))
+  
+}
+
+MCMC_rN_var_check_1.5 <- data.frame(gamma = gamma.column, 
+                      nchain = nchains.column,
+                      est = est.column,
+                      var = vars.column,
+                      sample_var = sample.var.column,
+                      mse = mse.column,
+                      bias = abs(hamming.score.prob(20, 15, 4) - est.column))
+write.csv(MCMC_rN_var_check_1.5, './Modeling/MCMC_var_check_gamma_15.csv')
+```
+
+```{r}
+MCMC_rN_var_check_1.5 <- read.csv('./Modeling/MCMC_var_check_gamma_15.csv')
+```
+
+
+```{r}
+ggplot() + 
+  geom_point(data = MCMC_rN_var_check_0.5, aes(x = var, y = sample_var, color = '0.5')) +
+  geom_smooth(data = MCMC_rN_var_check_0.5, aes(x = var, y = sample_var, color = '0.5'), method = 'lm') +
+  geom_point(data = MCMC_rN_var_check_0.75, aes(x = var, y = sample_var, color = '0.75'))  + 
+  geom_smooth(data = MCMC_rN_var_check_0.75, aes(x = var, y = sample_var, color = '0.75'), method = 'lm') +
+  geom_point(data = MCMC_rN_var_check, aes(x = var, y = sample_var, color = '1')) +
+  geom_smooth(data = MCMC_rN_var_check, aes(x = var, y = sample_var, color = '1'), method = 'lm') +
+  geom_point(data = MCMC_rN_var_check_1.15, aes(x = var, y = sample_var, color = '1.15')) +
+  geom_smooth(data = MCMC_rN_var_check_1.15, aes(x = var, y = sample_var, color = '1.15'), method = 'lm') +
+  labs(color = 'gamma')
+  
+```
+
+
+```{r}
+thr = 15:20
+nchains = 5
+N = 10^5
+gamma = 1
+m = 1000
+T = 1
+
+sample.var.column = numeric(0)
+est.column = numeric(0)
+vars.column = numeric(0)
+mse.column = numeric(0)
+p.column = numeric(0)
+
+for (t in thr){
+  est = numeric(m)
+  var = numeric(m)
+  for (i in 1:m) {
+    res <- MC3.UC.Rcpp(N, rep(0, 20), t, 4, gamma, gamma, nchains, T)
+  #  curr.iter = curr.iter + 1
+   # setTxtProgressBar(pb, curr.iter)
+    est[i] = res$p
+    var[i] = res$var
+  }
+  mse.column = c(mse.column, mean((est - hamming.score.prob(20, t, 4))^2))
+  vars.column = c(vars.column, mean(var))
+  est.column = c(est.column, mean(est))
+  sample.var.column = c(sample.var.column, var(est))
+  p.column = c(p.column, hamming.score.prob(20, t, 4))
+}
+
+MC3_different_p_df <- data.frame(p = p.column, 
+                                 est = est.column,
+                                 var = vars.column,
+                                 sample_var = sample.var.column,
+                                 mse = mse.column)
+```
+
+
+```{r}
+MC3_different_p_df %>% mutate(RE = sqrt(sample_var) / p)
+```
+
+
+```{r}
+thr = c(5, 10, 15, 20)
+nchains = 5
+N = 10^5
+gamma = 1
+m = 200
+T = 1
+
+sample.var.column = numeric(0)
+est.column = numeric(0)
+vars.column = numeric(0)
+mse.column = numeric(0)
+p.column = numeric(0)
+
+for (t in thr){
+  est = numeric(m)
+  var = numeric(m)
+  for (i in 1:m) {
+    res <- MC3.UC.Rcpp(N, rep(0, 20), t, 4, gamma, gamma, nchains, T)
+  #  curr.iter = curr.iter + 1
+   # setTxtProgressBar(pb, curr.iter)
+    est[i] = res$p
+    var[i] = res$var
+  }
+  mse.column = c(mse.column, mean((est - hamming.score.prob(20, t, 4))^2))
+  vars.column = c(vars.column, mean(var))
+  est.column = c(est.column, mean(est))
+  sample.var.column = c(sample.var.column, var(est))
+  p.column = c(p.column, hamming.score.prob(20, t, 4))
+}
+
+MC3_different_p_df_2 <- data.frame(p = p.column, 
+                                 est = est.column,
+                                 var = vars.column,
+                                 sample_var = sample.var.column,
+                                 mse = mse.column)
+```
+
+```{r}
+MC3_different_p_df_2 %>% mutate(RE = sqrt(sample_var) / p)
+```
+
+
+## Сравниваем относительные ошибки для вергоятности $\mathcal{H}(s_0, s) \geq 18$, $s_0, s \in \mathbb{S}^{(20)}$ над алфавитом длины $l \in {4, 5, 6, 7, 8, 9, 10}$.
+
+```{r}
+thr = 18
+alphabet.len = c(4, 5, 6, 7, 8, 9, 10)
+nchains = 10
+N = 10^5
+gamma = 1
+m = 200
+T = 1
+
+sample.var.column = numeric(0)
+est.column = numeric(0)
+vars.column = numeric(0)
+mse.column = numeric(0)
+p.column = numeric(0)
+
+for (al in alphabet.len){
+  est = numeric(m)
+  var = numeric(m)
+  for (i in 1:m) {
+    res <- MC3.UC.Rcpp(N, rep(0, 20), thr, al, gamma, gamma, nchains, T)
+  #  curr.iter = curr.iter + 1
+   # setTxtProgressBar(pb, curr.iter)
+    est[i] = res$p
+    var[i] = res$var
+  }
+  mse.column = c(mse.column, mean((est - hamming.score.prob(20, thr, al))^2))
+  vars.column = c(vars.column, mean(var))
+  est.column = c(est.column, mean(est))
+  sample.var.column = c(sample.var.column, var(est))
+  p.column = c(p.column, hamming.score.prob(20, thr, al))
+}
+
+MC3_different_p_df_3 <- data.frame(p = p.column, 
+                                 est = est.column,
+                                 var = vars.column,
+                                 sample_var = sample.var.column,
+                                 mse = mse.column)
+write.csv()
+```
+
+```{r}
+MC3_different_p_df_3 %>% mutate(RE = sqrt(sample_var) / p)
+```
+
+```{r}
+thr = 18
+alphabet.len = c(4, 5, 6, 7, 8, 9, 10)
+nchains = 10
+N = 10^5
+gamma = 1
+m = 200
+T = 1
+
+sample.var.column = numeric(0)
+est.column = numeric(0)
+vars.column = numeric(0)
+mse.column = numeric(0)
+p.column = numeric(0)
+
+for (al in alphabet.len){
+  est = numeric(m)
+  var = numeric(m)
+  for (i in 1:m) {
+    res <- MH.UC.Rcpp(N * nchains, rep(0, 20), thr, al, gamma, TRUE)#MC3.UC.Rcpp(N, rep(0, 20), thr, al, gamma, gamma, nchains, T)
+  #  curr.iter = curr.iter + 1
+   # setTxtProgressBar(pb, curr.iter)
+    est[i] = res$p
+    var[i] = res$var
+  }
+  mse.column = c(mse.column, mean((est - hamming.score.prob(20, thr, al))^2))
+  vars.column = c(vars.column, mean(var))
+  est.column = c(est.column, mean(est))
+  sample.var.column = c(sample.var.column, var(est))
+  p.column = c(p.column, hamming.score.prob(20, thr, al))
+}
+
+MH_different_p_df_3 <- data.frame(p = p.column, 
+                                 est = est.column,
+                                 var = vars.column,
+                                 sample_var = sample.var.column,
+                                 mse = mse.column)
+```
+
+
+```{r}
+MH_different_p_df_3 %>% mutate(RE = sqrt(sample_var) / p)
+```
+
+
+#Точно нужно
+
+```{r}
+N <- 10^6
+nchains <- c(1, 2, 4, 5, 8)
+sbs <- 1
+gamma = 1
+m = 100
+thr = 15
+
+total.iter = m * length(nchains)
+curr.iter = 0
+pb <- txtProgressBar(min = 0,      # Minimum value of the progress bar
+                     max = total.iter, # Maximum value of the progress bar
+                     style = 3,    # Progress bar style (also available style = 1 and style = 2)
+                     width = 50,   # Progress bar width. Defaults to getOption("width")
+                     char = "=")   # Character used to create the bar
+
+MSE.column = numeric(0)
+gamma.column = numeric(0)
+step.column = numeric(0)
+nchains.column = numeric(0)
+est.column = numeric(0)
+vars.column = numeric(0)
+mse.column = numeric(0)
+N.column = numeric(0)
+
+for (r in nchains){
+  set.seed(24)
+  est = numeric(m)
+  vars = numeric(m)
+  for (i in 1:m) {
+    curr.iter = curr.iter + 1
+    setTxtProgressBar(pb, curr.iter)
+    res <- MC3.UC.Rcpp(N / r, rep(0, 20), 15, 4, gamma, gamma, r, sbs)
+    est[i] = res$p
+    vars[i] = res$var
+  }
+  
+  N.column = c(N.column, N / r)
+  gamma.column = c(gamma.column, gamma)
+  step.column = c(step.column, sbs)
+  nchains.column = c(nchains.column, r)
+  est.column = c(est.column, mean(est))
+  vars.column = c(vars.column, mean(vars))
+  mse.column = c(mse.column, mean((est - hamming.score.prob(20, 15, 4))^2))
+}
+
+rn_comb_df <- data.frame(N = N.column,
+                         gamma = gamma.column,
+                         sbs = step.column,
+                         nchais = nchains.column,
+                         est = est.column,
+                         var = vars.column,
+                         mse = mse.column)
+
+write.csv(rn_comb_df, 'N_r_combinations.csv')
+
+```
+
+
+```{r}
+rn_comb_df[order(rn_comb_df$mse),]
+```
+
+
